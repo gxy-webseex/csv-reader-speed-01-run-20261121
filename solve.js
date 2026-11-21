@@ -1,8 +1,9 @@
 // Fast drop-in for csv-reader 1.0.0.
 // Strategy: jump between delimiters with String.indexOf and take whole fields
-// with String.slice, instead of reading one character at a time. A quoted field
-// is scanned for the next quote / CR / LF the same way; CRs and LFs inside
-// quotes become LF and count as lines. Output is identical to csv-reader 1.0.0.
+// - A quoted field is scanned for the next quote / CR / line end the same
+//   way; the record's line end is the newline bound, so a scan costs one
+//   indexOf (for '"') instead of two. CRs and LFs inside quotes become LF
+//   and count as lines. Output is identical to csv-reader 1.0.0.
 //
 // Speed notes:
 // - A bare indexOf('\r', p) scans to the end of the text when there is no CR
@@ -136,11 +137,16 @@ export function run(input) {
     let closed = false;
     let value = '';
     while (p < n) {
+      // The line-end bound must never lie behind the scan point (a CRLF
+      // inside quotes can leave it stale); recompute it.
+      if (lineEnd < p) {
+        const nl0 = text.indexOf('\n', p);
+        lineEnd = nl0 === -1 ? n : nl0;
+      }
       const iQ = text.indexOf('"', p);
-      const iL = text.indexOf('\n', p);
       let m = n;
       if (iQ !== -1) m = iQ;
-      if (iL !== -1 && iL < m) m = iL;
+      if (lineEnd < m) m = lineEnd;
       let cr = -1;
       if (hasCR) {
         cr = peekCR(p);
@@ -171,12 +177,15 @@ export function run(input) {
         chunkStart = p;
         continue;
       }
+      // m === lineEnd: an LF inside quotes becomes LF and counts a line.
       if (parts === null) parts = [];
       parts.push(text.slice(chunkStart, m));
       parts.push('\n');
       line += 1;
       p = m + 1;
       chunkStart = p;
+      const nl = text.indexOf('\n', p);
+      lineEnd = nl === -1 ? n : nl;
     }
     if (!closed) {
       pos = open + 1;
