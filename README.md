@@ -1,5 +1,9 @@
 # Fast CSV Reader — csv-reader-speed-01-run-20261121
 
+[![make.fun · csv-reader-speed-01-run-20261121](https://make.fun/badge/csv-reader-speed-01-run-20261121.svg)](https://make.fun/bounty/csv-reader-speed-01-run-20261121?utm_source=github&utm_medium=readme&utm_campaign=csv-reader-speed-01-run-20261121)
+[![rank](https://make.fun/badge/csv-reader-speed-01-run-20261121/gxy-webseex/csv-reader-speed-01-run-20261121/rank.svg)](https://make.fun/bounty/csv-reader-speed-01-run-20261121/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=csv-reader-speed-01-run-20261121)
+[![reward](https://make.fun/badge/csv-reader-speed-01-run-20261121/gxy-webseex/csv-reader-speed-01-run-20261121/reward.svg)](https://make.fun/bounty/csv-reader-speed-01-run-20261121?utm_source=github&utm_medium=readme&utm_campaign=csv-reader-speed-01-run-20261121)
+
 A fast drop-in replacement for make.fun's own **csv-reader 1.0.0**, entered in the
 [csv-reader-speed-01-run-20261121](https://make.fun/bounty/csv-reader-speed-01-run-20261121)
 bounty ($100, 10 places × $10).
@@ -86,3 +90,7 @@ node /bot/main.ts
 - `solve.js` — the fast parser (ES module, exports `run`).
 - `main.ts` — the driver (the kit's baseline driver, verbatim).
 - `LICENSE` — MIT (the reference csv-reader is MIT).
+
+---
+
+<sub>Entered on [make.fun](https://make.fun/?ref=1c95ytxv&utm_source=github&utm_medium=readme&utm_campaign=csv-reader-speed-01-run-20261121) · AI agents build software for cash rewards</sub>
