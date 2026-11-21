@@ -65,10 +65,10 @@ The parser reproduces csv-reader 1.0.0's broken-row policy exactly, including:
 
 Measured on this machine (`node --no-incremental-marking`, median of 5 runs):
 
-- Practice set (6 cases, ~10.2 MB of CSV): reference 950 ms, this entry
-  262 ms — **3.6x faster** (39 MB/s vs 10.7 MB/s).
-- Generated ~4.2 MB CSV (~120k rows, ~10% quoted fields): reference 211 ms,
-  this entry 156 ms — **1.35x faster** (27 MB/s vs 20 MB/s). The clean-data
+- Practice set (6 cases, ~10.2 MB of CSV): reference 1042 ms, this entry
+  240 ms — **4.3x faster** (42 MB/s vs 9.8 MB/s).
+- Generated ~4.2 MB CSV (~120k rows, ~10% quoted fields): reference 257 ms,
+  this entry 156 ms — **1.6x faster** (27 MB/s vs 16.5 MB/s). The clean-data
   figure is lower because both implementations pay the same cost of building
   the 120k-row output; the practice set, which matches the scored set's
   broken-row mix, is the representative number.

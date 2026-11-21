@@ -4,10 +4,19 @@
 // is scanned for the next quote / CR / LF the same way; CRs and LFs inside
 // quotes become LF and count as lines. Output is identical to csv-reader 1.0.0.
 //
-// Performance note: a bare indexOf('\r', p) scans to the end of the text when
-// there is no CR nearby, which is O(n) per field. The CR position is therefore
-// cached (peekCR): the search start only moves forward, so all CR scanning
-// across the whole parse is amortised O(n).
+// Speed notes:
+// - A bare indexOf('\r', p) scans to the end of the text when there is no CR
+//   nearby, which is O(n) per field. The CR position is therefore cached
+//   (peekCR): the search start only moves forward, so all CR scanning across
+//   the whole parse is amortised O(n). When the text holds no CR at all
+//   (hasCR false) the CR checks are skipped outright.
+// - An unquoted field ends at the next comma or at its record's line end.
+//   The line end is computed once per record (the fast-path check already
+//   finds it) and reused as a bound, so an unquoted field costs one indexOf
+//   (for ',') instead of two (',' and '\n'). After a quoted field — which
+//   may hold an embedded newline — the line end is recomputed.
+// - A clean line (no quotes, no stray CRs) is one record whose fields are
+//   just the line split on commas.
 
 const COMMA = 0;
 const LINE_BREAK = 1;
@@ -29,6 +38,10 @@ export function run(input) {
   let recordLine = 1;
   let recordRow = null;
 
+  // Whether the text holds any CR at all; when it does not, every CR check
+  // below is skipped.
+  const hasCR = text.indexOf('\r') !== -1;
+
   // Position of the next '\r' at or after the last search start, or -1 when a
   // search from a position at or before the current one found none, or -2
   // when no search has run yet. The parse only moves forward, so a cached
@@ -42,6 +55,11 @@ export function run(input) {
     return nextCR;
   }
 
+  // The next '\n' at or after the current record's start (n when there is
+  // none): the bound an unquoted field ends at. Recomputed after a quoted
+  // field, which may hold an embedded newline.
+  let lineEnd = n;
+
   function error(code) {
     errors.push({ code, line: recordLine, row: recordRow });
   }
@@ -50,59 +68,62 @@ export function run(input) {
     let added = 0;
     let parts = null;
     let p = pos;
+    // The line-end bound must never lie behind the field start (a quoted
+    // field with an embedded newline can leave it stale); recompute it.
+    if (lineEnd < p) {
+      const nl = text.indexOf('\n', p);
+      lineEnd = nl === -1 ? n : nl;
+    }
     while (true) {
       const iC = text.indexOf(',', p);
-      const iL = text.indexOf('\n', p);
-      let m = n;
-      if (iC !== -1) m = iC;
-      if (iL !== -1 && iL < m) m = iL;
+      // The field ends at the nearer of the next comma and the line end.
+      let m = lineEnd;
+      if (iC !== -1 && iC < m) m = iC;
       // A CR before m is either a stray CR (drop + error, field continues)
       // or, when it sits immediately before the LF that ends the field, the
       // CRLF line ending itself.
-      const cr = peekCR(p);
-      if (cr !== -1 && cr < m) {
-        if (cr === m - 1 && m === iL) {
+      if (hasCR) {
+        const cr = peekCR(p);
+        if (cr !== -1 && cr < m) {
+          if (cr === m - 1 && m === lineEnd && lineEnd < n) {
+            const tail = text.slice(p, cr);
+            added += tail.length;
+            if (parts) { parts.push(tail); value = parts.join(''); }
+            else value += tail;
+            pos = lineEnd + 1;
+            line += 1;
+            return { value, ended: LINE_BREAK, added };
+          }
+          error('stray_cr');
           const tail = text.slice(p, cr);
           added += tail.length;
-          if (parts) { parts.push(tail); value = parts.join(''); }
-          else value += tail;
-          pos = m + 1;
-          line += 1;
-          return { value, ended: LINE_BREAK, added };
+          if (parts === null) parts = [value, tail];
+          else parts.push(tail);
+          p = cr + 1;
+          continue;
         }
-        error('stray_cr');
-        const tail = text.slice(p, cr);
-        added += tail.length;
-        if (parts === null) parts = [value, tail];
-        else parts.push(tail);
-        p = cr + 1;
-        continue;
       }
-      if (m === n) {
-        const tail = text.slice(p, n);
-        added += tail.length;
-        if (parts) { parts.push(tail); value = parts.join(''); }
-        else value += tail;
-        pos = n;
-        return { value, ended: END, added };
-      }
-      if (m === iC) {
+      if (m === lineEnd) {
+        // The field ends at the line end (or at EOF when lineEnd is n).
         const tail = text.slice(p, m);
         added += tail.length;
         if (parts) { parts.push(tail); value = parts.join(''); }
         else value += tail;
-        pos = m + 1;
-        return { value, ended: COMMA, added };
+        if (lineEnd >= n) {
+          pos = n;
+          return { value, ended: END, added };
+        }
+        pos = lineEnd + 1;
+        line += 1;
+        return { value, ended: LINE_BREAK, added };
       }
-      // m === iL: plain LF (a CRLF here would have been caught above, since
-      // its CR sits at m-1 and peekCR(p) would have returned it).
+      // The field ends at a comma.
       const tail = text.slice(p, m);
       added += tail.length;
       if (parts) { parts.push(tail); value = parts.join(''); }
       else value += tail;
       pos = m + 1;
-      line += 1;
-      return { value, ended: LINE_BREAK, added };
+      return { value, ended: COMMA, added };
     }
   }
 
@@ -120,8 +141,11 @@ export function run(input) {
       let m = n;
       if (iQ !== -1) m = iQ;
       if (iL !== -1 && iL < m) m = iL;
-      const cr = peekCR(p);
-      if (cr !== -1 && cr < m) m = cr;
+      let cr = -1;
+      if (hasCR) {
+        cr = peekCR(p);
+        if (cr !== -1 && cr < m) m = cr;
+      }
       if (m === n) break;
       if (m === iQ) {
         if (m + 1 < n && text[m + 1] === '"') {
@@ -168,6 +192,11 @@ export function run(input) {
     if (c === ',') { pos += 1; return { value, ended: COMMA }; }
     if (c === '\n') { pos += 1; line += 1; return { value, ended: LINE_BREAK }; }
     if (c === '\r' && pos + 1 < n && text[pos + 1] === '\n') { pos += 2; line += 1; return { value, ended: LINE_BREAK }; }
+    // The junk after the closing quote is read as unquoted. The quoted field
+    // may have held an embedded newline, so the line-end bound from the
+    // record's start can be stale (behind pos); recompute it first.
+    const nl = text.indexOf('\n', pos);
+    lineEnd = nl === -1 ? n : nl;
     const junk = readUnquoted(value);
     if (junk.added > 0) error('quote_junk');
     return junk;
@@ -205,16 +234,16 @@ export function run(input) {
     recordLine = line;
     recordRow = (header && columns === null) ? null : rows.length;
 
-    // Fast path: a clean line — no quotes and no stray CRs — is one record
-    // whose fields are just the line split on commas. Find the line end, then
-    // check for a quote or a stray CR inside it; either falls back to the
-    // careful field-by-field parser below.
+    // The record's line end, reused as the bound for its unquoted fields.
     const iL = text.indexOf('\n', pos);
-    const lineEnd = iL === -1 ? n : iL;
+    lineEnd = iL === -1 ? n : iL;
+
+    // Fast path: a clean line — no quotes and no stray CRs — is one record
+    // whose fields are just the line split on commas.
     let contentEnd = lineEnd;
-    if (lineEnd > pos && lineEnd < n && text[lineEnd - 1] === '\r') contentEnd = lineEnd - 1;
+    if (hasCR && lineEnd > pos && lineEnd < n && text[lineEnd - 1] === '\r') contentEnd = lineEnd - 1;
     const iQ = text.indexOf('"', pos);
-    const cr = peekCR(pos);
+    const cr = hasCR ? peekCR(pos) : -1;
     if ((iQ === -1 || iQ >= contentEnd) && (cr === -1 || cr >= contentEnd)) {
       // Clean line: no quotes, no stray CRs (the CRLF CR, if any, is excluded
       // from the content). An empty line is no record.
@@ -237,6 +266,12 @@ export function run(input) {
       quoted = text[pos] === '"';
       field = quoted ? readQuoted() : readUnquoted('');
       fields.push(field.value);
+      // A quoted field may hold an embedded newline, so the line end bound
+      // is recomputed after one.
+      if (quoted) {
+        const nl = text.indexOf('\n', pos);
+        lineEnd = nl === -1 ? n : nl;
+      }
     } while (field.ended === COMMA);
 
     finishRecord(fields, quoted);
